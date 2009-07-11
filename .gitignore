@@ -1,0 +1,5 @@
+*.fasl
+*.lx64fsl
+*~
+/_darcs
+/uim-1.5.5

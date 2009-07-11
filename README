@@ -1,0 +1,5 @@
+(require :mcclim-uim) すれば ok です。
+
+それとは別に McCLIM で日本語表示するためには (require :mcclim-freetype) も必要です。
+
+darcs get http://li31-15.members.linode.com/darcs/mcclim-uim

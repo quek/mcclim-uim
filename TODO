@@ -1,0 +1,16 @@
+まだ
+
+* preedit でのカーソル位置表示。SKK 以外だと必要そう。
+* preedit-frame 表示中に終了した場合とか。
+* mune-frame だと他のアプリに切り替えても最全面に表示されたまま。
+* preedit の attr の reverse, cursor, separate, underline とか。
+* SBCL を最新にしたら (require :mcclim-freetype) で動かなくなった。
+  とりあず (require :mcclim-freetype-cffi) なら動く。
+
+できた
+
+* preedit-frame の表示位置
+  frame 下に表示するようにした
+* candidate
+* メモリ。特に uim-ffi.lisp の中の :string のところ。
+  結構、大丈夫みたい。
