@@ -160,12 +160,14 @@ uif-fep では uim_press_key のあとにすぐ uim_release_key をコールし�
   (progn
     (let ((preedit ""))
       (cffi:defcallback clear-cb :void ((ptr :pointer))
+        (format t "~&clear-cb: preedit => ~a" preedit)
         (setf preedit ""))
       (cffi:defcallback pushback-cb :void
           ((ptr :pointer) (attr :int) (str :string))
-        (format t "~&attr: ~d, ~a" attr
+        (format t "~&pushback-cb attr: ~d, ~a, ~a" attr str
                 (setf preedit (concatenate 'string preedit str))))
       (cffi:defcallback update-cb :void ((ptr :pointer))
+        (format t "~&update-cb: preedit => ~a" preedit)
         ))
     (uim-set-preedit-cb *uim-context*
                         (cffi:callback clear-cb)
@@ -174,22 +176,22 @@ uif-fep では uim_press_key のあとにすぐ uim_release_key をコールし�
 
   (progn
     (cffi:defcallback update-cb :void ((ptr :pointer) (str :string))
-      (p 'update-cb ptr str))
+      (q:p 'update-cb ptr str))
     (uim-set-prop-list-update-cb *uim-context* (cffi:callback update-cb)))
 
   ;; candidate
   (progn
     (cffi:defcallback activate-cb :void
         ((ptr :pointer) (nr :int) (display-limit :int))
-      (p 'activate-cb ptr nr display-limit))
+      (q:p 'activate-cb ptr nr display-limit))
     (cffi:defcallback select-cb :void
         ((ptr :pointer) (index :int))
-      (p 'select-cb ptr index))
+      (q:p 'select-cb ptr index))
     (cffi:defcallback shift-page-cb :void
         ((ptr :pointer) (direction :int))
-      (p 'shift-page-cb ptr int))
+      (q:p 'shift-page-cb ptr int))
     (cffi:defcallback deactivate-cb :void ((ptr :pointer))
-      (p 'deactivate-cb ptr))
+      (q:p 'deactivate-cb ptr))
     (uim-set-candidate-selector-cb *uim-context*
                                    (cffi:callback activate-cb)
                                    (cffi:callback select-cb)
@@ -205,6 +207,16 @@ uif-fep では uim_press_key のあとにすぐ uim_release_key をコールし�
   (uim-press-key *uim-context* (char-code #\space) 0)
   (uim-press-key *uim-context* (char-code #\j) +umod-control+)
   (uim-press-key *uim-context* (char-code #\space) +umod-shift+)
+
+  ;; T-Code 用
+  (uim-press-key *uim-context* (char-code #\space) +umod-shift+)
+  (uim-press-key *uim-context* (char-code #\u) 0)
+  (uim-press-key *uim-context* (char-code #\h) 0)
+  (uim-press-key *uim-context* (char-code #\f) 0)
+  (uim-press-key *uim-context* (char-code #\u) 0)
+  (uim-press-key *uim-context* (char-code #\space) 0)
+  (uim-press-key *uim-context* +ukey-return+ 0)
+
 
 
   ;; helper ???

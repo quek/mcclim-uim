@@ -12,9 +12,9 @@
   ((event :initform nil)
    (context :initform nil)
    (preedits :initform nil)
-   (commit-str :initform nil :accessor commit-str)
    (preedit-pane :initform nil)
    (preedit-frame :initform nil)
+   (preedit-range :initform nil)
    (candidates :initform nil)
    (candidate-page :initform 0)
    (candidate-display-limit :initform 0)))
@@ -47,6 +47,9 @@
            (cdr preedits))
           (t preedits))))
 
+(defun preedits-length (preedits)
+  (loop for (attr . str) in preedits
+        sum (length str)))
 
 (defmethod get-preedit-text ((uim-context uim-context)
                              (sheet esa:minibuffer-pane))
@@ -61,60 +64,111 @@
         nil
         str)))
 
+(defun remove-annotation (string)
+  (let ((pos (position #\; string)))
+    (if pos
+        (subseq string 0 pos)
+        string)))
+
+(defgeneric sheet-preedit-pushback (sheet attr str uim-context))
+
+(defmethod sheet-preedit-pushback ((sheet sheet) attr str (uim-context uim-context))
+  (with-slots (preedits) uim-context
+    (push (cons attr str) preedits)))
+
+(defgeneric sheet-preedit-update (sheet uim-context))
+
 (defmethod sheet-preedit-update ((sheet esa:minibuffer-pane)
                                  (uim-context uim-context))
-  (let ((text (get-preedit-text uim-context sheet)))
-    (when text
-      (let ((esa::*esa-instance* (pane-frame sheet)))
-        (drei-buffer:insert-object (drei:point) text)
-        (redisplay-frame-panes esa::*esa-instance*)))))
+  (with-slots (preedit-range) uim-context
+    (drei:with-bound-drei-special-variables ((pane-frame sheet))
+      (let* ((text (get-preedit-text uim-context sheet))
+             (begin (drei-buffer:offset (drei:point)))
+             (end (+ begin (length text))))
+        (when text
+          (setf preedit-range (cons begin end))
+          (drei-buffer:insert-buffer-sequence (esa-io:buffer (drei:point))
+                                              begin
+                                              text)
+          (redisplay-frame-panes esa:*esa-instance*))))))
+
+(defmethod sheet-preedit-update ((sheet sheet) (uim-context uim-context))
+  (with-slots (preedit-range) uim-context
+    (let ((offset 0))
+      (mapc (lambda (x)
+              (if (preedit-cursor-p x)
+                  (progn
+                    (send-key-press-event uim-context #\*)
+                    (incf offset))
+                  (progn
+                    (send-key-press-event uim-context (cdr x))
+                    (incf offset (length (cdr x))))))
+            (reverse (preedits-but-last-cursor uim-context)))
+      (setf preedit-range (cons 0 offset)))))
+
+(defgeneric sheet-preedit-clear (sheet uim-context))
 
 (defmethod sheet-preedit-clear ((sheet esa:minibuffer-pane)
                                 (uim-context uim-context))
-  (with-slots (commit-str) uim-context
-    (when (loop for i in (preedits-but-last-cursor uim-context)
-                thereis (or (preedit-cursor-p i)
-                            (not (zerop (length (cdr i))))))
-      (let ((esa::*esa-instance* (pane-frame sheet)))
-        (drei-editing:backward-delete-object (drei:point))))
-    (when commit-str
-      (let ((esa::*esa-instance* (pane-frame sheet)))
-        (drei-buffer:insert-sequence (drei:point) commit-str)
-        (setf commit-str nil)
-        (redisplay-frame-panes drei-commands::*esa-instance*)))))
+  (drei:with-bound-drei-special-variables ((pane-frame sheet))
+    (with-slots (preedit-range) uim-context
+      (when preedit-range
+        (let ((begin (car preedit-range))
+              (end (drei-buffer:make-buffer-mark (drei:buffer (drei:point))
+                                                 (cdr preedit-range))))
+        (drei-buffer:delete-region begin end)
+        (setf preedit-range nil)
+        (redisplay-frame-panes esa:*esa-instance*))))))
+
+(defmethod sheet-preedit-clear ((sheet sheet) (uim-context uim-context))
+  (with-slots (preedit-range) uim-context
+    (when preedit-range
+      (loop repeat (cdr preedit-range)
+            do (send-key-press-event uim-context #\Backspace))
+      (setf preedit-range nil))))
+
+(defgeneric sheet-commit (sheet commit-str uim-context))
+
+(defmethod sheet-commit ((sheet esa:minibuffer-pane)
+                         (commit-str string)
+                         (uim-context uim-context))
+  (let ((commit-str (remove-annotation commit-str)))
+    (drei:with-bound-drei-special-variables ((pane-frame sheet))
+          (with-slots (preedit-range) uim-context
+            (drei-buffer:insert-buffer-sequence
+                         (esa-io:buffer (drei:point))
+                         (if preedit-range
+                             (car preedit-range)
+                             (drei-buffer:offset (drei:point)))
+                         commit-str)
+            (when preedit-range
+              (incf (car preedit-range) (length commit-str))
+              (incf (cdr preedit-range) (length commit-str)))
+            (redisplay-frame-panes esa:*esa-instance*)))))
+
+(defmethod sheet-commit ((sheet sheet)
+                         (commit-str string)
+                         (uim-context uim-context))
+  (sheet-preedit-clear sheet uim-context)
+  (send-key-press-event uim-context commit-str))
+
+
 
 (defmethod get-preedit-text ((uim-context uim-context)
                              (sheet sheet))
   (reverse (preedits-but-last-cursor uim-context)))
-
-(defmethod sheet-preedit-update ((sheet sheet) (uim-context uim-context))
-  (mapc (lambda (x)
-          (if (preedit-cursor-p x)
-              (send-key-press-event uim-context #\*)
-              (send-key-press-event uim-context (cdr x))))
-        (reverse (preedits-but-last-cursor uim-context))))
 
 (defmethod preedit-update ((uim-context uim-context))
   (with-slots (event) uim-context
     (with-accessors ((sheet event-sheet)) event
       (sheet-preedit-update sheet uim-context))))
 
-(defmethod sheet-preedit-clear ((sheet sheet) (uim-context uim-context))
-  (with-slots (commit-str) uim-context
-    (loop repeat (loop for i in (preedits-but-last-cursor uim-context)
-                       sum (if (preedit-cursor-p i)
-                               1
-                               (length (cdr i))))
-          do (send-key-press-event uim-context #\Backspace))
-    (when commit-str
-      (send-key-press-event uim-context commit-str)
-      (setf commit-str nil))))
-
 (defmethod preedit-clear ((uim-context uim-context))
   (with-slots (event preedits) uim-context
     (with-accessors ((sheet event-sheet)) event
       (sheet-preedit-clear sheet uim-context))
     (setf preedits nil)))
+
 
 (defclass preedit-frame (climi::menu-frame) ())
 
@@ -164,12 +218,13 @@
         (present *uim-context* 'preedit :stream pane))))
 
 (defun commit-cb-function (commit-str)
-  "確定した文字列は preedit-clear で表示する。"
-  (setf (commit-str *uim-context*) commit-str))
+  (with-slots (event) *uim-context*
+    (with-accessors ((sheet event-sheet)) event
+      (sheet-commit sheet commit-str *uim-context*))))
 
 (cffi:defcallback commit-cb :void ((ptr :pointer) (commit-str :string))
   (declare (ignore ptr))
-  (commit-cb-function commit-str))
+  (commit-cb-function (remove-annotation commit-str)))
 
 (defun preedit-clear-cb-function ()
   (preedit-clear *uim-context*))
@@ -179,8 +234,9 @@
   (preedit-clear-cb-function))
 
 (defun preedit-pushback-cb-function (attr str)
-  (with-slots (preedits) *uim-context*
-    (push (cons attr str) preedits)))
+  (with-slots (event) *uim-context*
+    (with-accessors ((sheet event-sheet)) event
+      (sheet-preedit-pushback sheet attr str *uim-context*))))
 
 (cffi:defcallback preedit-pushback-cb :void
     ((ptr :pointer) (attr :int) (str :string))
